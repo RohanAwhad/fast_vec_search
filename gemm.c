@@ -1,4 +1,5 @@
 // gcc -O3 gemm.c
+// gcc gemm.c -O2 -ffast-math && ./a.out
 // CPU Freq: 3.2GHz
 
 #include <stdio.h>
@@ -8,6 +9,7 @@
 #include <math.h>
 #include <string.h>
 #include <arm_neon.h>
+#include <stdbool.h>
 
 // #define N 2048
 #define N 4096
@@ -86,8 +88,8 @@ void transpose(float *in, float *out, int n) {
 
 
 void fast_matmul(float *a, float *b, float*c) {
-  int BLOCK_I = 256;
-  int BLOCK_J = 16;
+  int BLOCK_I = 128;
+  int BLOCK_J = 32;
   // int BLOCK_I = 4;
   // int BLOCK_J = 8;
   int N_LANES = 4;
@@ -193,7 +195,7 @@ void fast_matmul(float *a, float *b, float*c) {
 // }
 
   free(tmp);
-  // free(b_swizzled);
+  free(b_swizzled);
 
   double end = get_time();
   float time_spent = (float) (end - start);
@@ -222,27 +224,29 @@ int main() {
   // Initialize matrices with random values
   for (int i = 0; i < N; i++) {
     for (int j = 0; j < N; j++) {
-      // a[i * N + j] = (float)rand() / RAND_MAX;
-      // b[i * N + j] = (float)rand() / RAND_MAX;
-      a[i * N + j] = i * N + j;
-      b[i * N + j] = i * N + j;
-      // c[i * N + j] = 0;
+      a[i * N + j] = (float)rand() / RAND_MAX;
+      b[i * N + j] = (float)rand() / RAND_MAX;
+      // a[i * N + j] = i * N + j;
+      // b[i * N + j] = i * N + j;
       cc[i * N + j] = 0;
     }
   }
 
 
   
-  for (int i =0; i<2; i++) fast_matmul(a, b, c);
+  for (int i =0; i<10; i++) fast_matmul(a, b, c);
   // for (int i =0; i<10; i++) matmul(a, b, c);
 
   matmul(a, b, cc);
+  bool is_correct = true;
   for (int i=0; i<(N*N); i++) {
     if (fabsf(cc[i] - c[i]) > 1e-4) {
       printf("MISMATCH at [%d]: %f != %f\n", i, cc[i], c[i]);
+      is_correct = false;
       break;
     }
   }
+  if (is_correct) printf("MATCHED!!!!\n");
 
 
   // printf("\nMatrix C (Fast):\n");
