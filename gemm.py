@@ -1,19 +1,14 @@
-# write a main function that will create 2 np arrays of size NxN and matmul them. Also time the thing in seconds
-# import os
-# os.environ["OMP_NUM_THREADS"] = "1"
-# os.environ["OPENBLAS_NUM_THREADS"] = "1"
-# os.environ["MKL_NUM_THREADS"] = "1"
-# os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-# os.environ["NUMEXPR_NUM_THREADS"] = "1"
-
 import numpy as np
 import time
 
-def main():
-  N = 5120
+M = 4096
+N = 4096
+P = 4096
+
+def np_run():
   
-  A = np.random.rand(N, N)
-  B = np.random.rand(N, N)
+  A = np.random.rand(M, N)
+  B = np.random.rand(N, P)
   
   start_time = time.perf_counter()
   C = np.matmul(A, B)
@@ -21,10 +16,36 @@ def main():
   execution_time = end_time - start_time
   C += C
   
-  flop = N*N*2*N
+  flop = M*P*2*N
   flop_s = flop / execution_time
   print(f'{flop_s/1e9:.2f} GFLOP/s')
   
 if __name__ == "__main__":
-  for _ in range(1000000):
-    main()
+  print('\n\n===\nNumpy\n===\n')
+  for _ in range(10):
+    np_run()
+
+
+# write same for pytorch
+import torch
+import time
+
+def torch_run():
+  
+  A = torch.rand(M, N)
+  B = torch.rand(N, P)
+  
+  start_time = time.perf_counter()
+  C = torch.matmul(A, B)
+  end_time = time.perf_counter()
+  execution_time = end_time - start_time
+  C += C
+  
+  flop = M*P*2*N
+  flop_s = flop / execution_time
+  print(f'{flop_s/1e9:.2f} GFLOP/s')
+  
+if __name__ == "__main__":
+  print('\n\n===\nPyTorch\n===\n')
+  for _ in range(10):
+    torch_run()
