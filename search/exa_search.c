@@ -1,5 +1,5 @@
 // gcc exa_search.c -framework Accelerate && ./a.out
-// gcc -c -O2 -ffast-math -fPIC exa_search.c -framework Accelerate && gcc -shared -o libexa_search.so exa_search.o -framework Accelerate
+// gcc -c -O2 -ffast-math -fPIC exa_search.c && gcc -shared -o libexa_search.so exa_search.o -framework Accelerate
 
 #include <stdint.h>
 #include <stdio.h>
@@ -26,14 +26,23 @@ void get_binary_matrix(float *binary_array) {
   }
 }
 
-void compile_scores(uint8_t *compressed, float *lookup_table, float *scores, int DB_SIZE) {
-  for (int i=0; i<DB_SIZE; i++) {
-    float sc = 0.0;
-    for (int j=0; j<EMBED_SIZE/BYTE_SIZE; j++) {
-      int key = (int)compressed[i*EMBED_SIZE/BYTE_SIZE + j];
-      sc += lookup_table[j*256+key];
+void compile_scores(uint8_t *compressed, float *lookup_table, float *scores, int n, int DB_SIZE) {
+  for (int k=0; k<n; k++) {  // looping over n queries
+
+    for (int i=0; i<DB_SIZE; i++) {  // for each query loop over entire db
+
+      float sc = 0.0;
+      for (int j=0; j<EMBED_SIZE/BYTE_SIZE; j++) {
+        int key = (int)compressed[i*EMBED_SIZE/BYTE_SIZE + j];  // lookup key from compressed db
+
+        // given key and query get score from lookup table
+        int idx = k*256*EMBED_SIZE/BYTE_SIZE + j*256 + key;
+        sc += lookup_table[idx];
+      }
+
+      scores[k*DB_SIZE + i] = sc;
     }
-    scores[i] = sc;
+
   }
 }
 
@@ -58,7 +67,7 @@ void instantiate_lookup_table(float *lookup_table, float *query, float *matrix_B
     1,                             // stride B
     lookup_table,                  // C
     1,                             // stride C
-    EMBED_SIZE/SUBVECTOR_SIZE,     // M (rows in A)
+    n*EMBED_SIZE/SUBVECTOR_SIZE,     // M (rows in A)
     256,                           // N (cols in B)
     SUBVECTOR_SIZE                 // P (cols in A, rows in B)
   );
@@ -68,5 +77,5 @@ void get_scores(float *query, uint8_t *compressed, float *matrix_B, float *score
   // n is number of query embeddings
   float lookup_table[n*EMBED_SIZE/SUBVECTOR_SIZE][256];
   vDSP_mmul((float *)query, 1, (float *) matrix_B, 1, (float *)lookup_table, 1, n*EMBED_SIZE/SUBVECTOR_SIZE, 256, SUBVECTOR_SIZE);
-  compile_scores((uint8_t *)compressed, (float *)lookup_table, (float *)scores, DB_SIZE);
+  compile_scores((uint8_t *)compressed, (float *)lookup_table, (float *)scores, n, DB_SIZE);
 }

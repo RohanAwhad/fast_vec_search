@@ -57,8 +57,9 @@ class VectorSearch:
 
   def query(self, x, k=10):
     "query based on given query embeddings"
+    assert len(x.shape) == 2, 'expecting a 2-D array'
     assert x.shape[1] >= EMBED_SIZE, f'need embedding dimension size >= {EMBED_SIZE}, but got "{x.shape[1]}"'
-    scores = np.zeros(self.DB_SIZE, dtype=np.float32)
+    scores = np.zeros((len(x), self.DB_SIZE), dtype=np.float32)
     self.lib.get_scores(
       x[:, :EMBED_SIZE].astype(np.float32).ravel(),
       self.compressed.ravel(),
@@ -68,14 +69,17 @@ class VectorSearch:
       self.DB_SIZE,
     )
 
-    top_k = list(scores.argsort()[::-1][:k])
+    top_k = list(scores.argsort()[:, ::-1][:k])
     ret = []
-    for i, x in enumerate(top_k):
-      ret.append({
-        'id': self.ids[x],
-        'rank': i,
-        'score': scores[x]
-      })
+    for qid in range(len(x)):
+      _tmp = []
+      for i, x in enumerate(top_k[qid]):
+        _tmp.append({
+          'id': self.ids[x],
+          'rank': i,
+          'score': scores[qid][x]
+        })
+      ret.append(_tmp)
     return ret
 
   def append(self, x):
@@ -159,11 +163,11 @@ if __name__ == '__main__':
     print("Expected context:", dataset[idx]['context'][:100], "...")
     
     ans = vs.query(query, k=50)
-    docs = [dataset[hash2idx[x['id']]]['context'] for x in ans]
-    reranked_docs = rerank(dataset[idx]['question'], docs, k=10)
+    docs = [dataset[hash2idx[x['id']]]['context'] for x in ans[0]]
+    # reranked_docs = rerank(dataset[idx]['question'], docs, k=10)
 
     print("\nTop 10 retrieved contexts:")
-    for i, x in enumerate(reranked_docs):
+    for i, x in enumerate(docs[:5]):
       print(f"\n - {i+1}.", x[:100], "...")
 
     idx_s = (query @ db.T).reshape(-1).argsort()[::-1][:3]
@@ -178,17 +182,24 @@ if __name__ == '__main__':
     hits = {k: 0 for k in K}
     test_indices = random.sample(range(len(dataset)), total)
 
+    query_embeddings = []
+    context_hashes = []
     for idx in tqdm(test_indices):
       query = embed(dataset[idx]['question'], is_query=True).reshape(1, -1).astype(np.float32)
       context_hash = hashlib.md5(dataset[idx]['context'].encode('utf-8')).hexdigest()
-      
-      ans = vs.query(query, k=max(K))
-      docs = [dataset[hash2idx[x['id']]]['context'] for x in ans]
-      reranked_docs = rerank(dataset[idx]['question'], docs, k=max(K))
-      reranked_hashes = [hashlib.md5(x.encode('utf-8')).hexdigest() for x in reranked_docs]
-      
+      query_embeddings.append(query)
+      context_hashes.append(context_hash)
+
+    query_embeddings = np.vstack(query_embeddings)
+    ans = vs.query(query_embeddings, k=max(K))
+    hashes = [[x['id'] for x in a] for a in ans]
+    # docs = [dataset[hash2idx[x['id']]]['context'] for x in ans]
+    # reranked_docs = rerank(dataset[idx]['question'], docs, k=max(K))
+    # reranked_hashes = [hashlib.md5(x.encode('utf-8')).hexdigest() for x in reranked_docs]
+    
+    for i, context_hash in enumerate(context_hashes):
       for k in K:
-        if context_hash in reranked_hashes[:k]:
+        if context_hash in hashes[i][:k]:
           hits[k] += 1
 
     print("\nRetrieval Accuracy:")

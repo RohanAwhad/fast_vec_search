@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
-#define M 8192
+#define M 1024
 #define N 256
-#define P 8192
+#define P 1024
 #define MATRIX_ALIGN 64
 
 double wall_time() {
@@ -27,7 +27,7 @@ int main() {
   for(int i=0; i<M*N; i++) { A[i] = (float)rand()/RAND_MAX; }
   for(int i=0; i<N*P; i++) { B[i] = (float)rand()/RAND_MAX; }
   
-  for (int i=0; i<100000; i++) {
+  for (int i=0; i<10; i++) {
     double start = wall_time();
     vDSP_mmul(A, 1, B, 1, C, 1, M, P, N);
     double end = wall_time();
@@ -40,8 +40,30 @@ int main() {
     printf("Performance: %.2f GFLOPS\n", gflops);
   }
 
+
+  // test output by doing normal 3 loop matmul
+  float *C_test = (float*)aligned_alloc(MATRIX_ALIGN, (size_t)M*P*sizeof(float));
+  for(int i = 0; i < M; i++) {
+    for(int j = 0; j < P; j++) {
+      C_test[i*P + j] = 0;
+      for(int k = 0; k < N; k++) {
+        C_test[i*P + j] += A[i*N + k] * B[k*P + j];
+      }
+    }
+  }
+
+  // Compare results
+  float max_diff = 0.0f;
+  for(int i = 0; i < M*P; i++) {
+    float diff = fabsf(C[i] - C_test[i]);
+    if(diff > max_diff) max_diff = diff;
+  }
+  printf("Maximum difference between BLAS and naive implementation: %e\n", max_diff);
+
   free(A);
   free(B);
   free(C);
+  free(C_test);
+
   return 0;
 }

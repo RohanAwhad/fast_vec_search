@@ -224,106 +224,33 @@ def benchmark():
 benchmark()
 
 
+# these were all single query, now I want to test the final scores for a batch of 2 queries at a time
+# Test batch processing
+batch_size = 2
+queries = np.random.rand(batch_size, EMBED_SIZE).astype(np.float32) * 2 - 1
 
+# Python implementation
+py_batch_scores = []
+for q in queries:
+  subvector_scores = generate_subvector_scores(q)
+  scores = compile_scores(subvector_scores, binary_db)
+  py_batch_scores.append(scores)
+py_batch_scores = np.array(py_batch_scores)
 
-"""
-query = np.random.rand(EMBED_SIZE)*2-1
-query_np = query.astype(np.float32)
-subvector_scores = query_np.reshape(EMBED_SIZE//SUBVECTOR_SIZE, SUBVECTOR_SIZE) @ matrix_B.T
-
-# Test C implementation lookup table
-lookup = np.zeros((EMBED_SIZE//SUBVECTOR_SIZE, 256), dtype=np.float32)
-lib.instantiate_lookup_table(
-  lookup,
-  query_np,
-  matrix_B.T.astype(np.float32),
-  1
+# C implementation
+c_batch_scores = np.zeros((batch_size, DB_SIZE), dtype=np.float32)
+lib.get_scores(
+  queries.ravel(),
+  compressed.ravel(),
+  matrix_B.T.ravel(),
+  c_batch_scores.ravel(),
+  batch_size,
+  DB_SIZE
 )
 
-print("\nLookup table valid?", np.allclose(lookup, subvector_scores, atol=1e-5))
+print("Batch scores match?", np.allclose(c_batch_scores, py_batch_scores))
 
-  i am getting invlida lookup table
-
-  lib.instantiate lookup table is:
-void instantiate_lookup_table(float *lookup_table, float *query, float *matrix_B, int n) {
-  vDSP_mmul((float *)query, 1, (float *) matrix_B, 1, lookup_table, 1, n*EMBED_SIZE/SUBVECTOR_SIZE, 256, SUBVECTOR_SIZE);
-}
-
-and documentaion on vDSP_mmul is below:
-vDSP_mmul
-Performs an out-of-place multiplication of two single-precision real matrices.
-iOS 4.0+
-iPadOS 4.0+
-Mac Catalyst 13.1+
-macOS 10.2+
-tvOS
-visionOS 1.0+
-watchOS 2.0+
-extern void vDSP_mmul(const float * __A, vDSP_Stride __IA, const float * __B, vDSP_Stride __IB, float * __C, vDSP_Stride __IC, vDSP_Length __M, vDSP_Length __N, vDSP_Length __P);
-Parameters
-__A
-The M x P left-hand side input matrix.
-
-__IA
-The distance between the elements in the left-hand side input matrix.
-
-__B
-The P x N right-hand side input matrix.
-
-__IB
-The distance between the elements in the right-hand side input matrix.
-
-__C
-The M x N output matrix.
-
-__IC
-The distance between the elements in the output matrix.
-
-__M
-The number of rows in matrices A and C.
-
-__N
-The number of columns in matrices B and C.
-
-__P
-The number of columns in matrix A and the number of rows in matrix B.
-
-Discussion
-The following code multiplies the matrices a and b, and writes the result to matrix c:
-
-    let m: vDSP_Length = 2
-    let n: vDSP_Length = 5
-    let p: vDSP_Length = 3
-    
-    // `m` rows x `p` columns.
-    let a: [Float] = [ 1, 2, 3,
-                       4, 5, 6 ]
-    
-    // `p` rows x `n` columns.
-    let b: [Float] = [ 10, 11, 12, 13, 14,
-                       15, 16, 17, 18, 19,
-                       20, 21, 22, 23, 24 ]
-    
-    
-    
-    // `m` rows x `n` columns.
-    var c = [Float](repeating: 0,
-                    count: Int(m * n))
-    
-    let stride = 1
-    
-    vDSP_mmul(a, stride,
-              b, stride,
-              &c, stride,
-              m,
-              n,
-              p)
-    
-    // Prints:
-    // "[ 100.0, 106.0, 112.0, 118.0, 124.0,
-    //    235.0, 250.0, 265.0, 280.0, 295.0 ]".
-    print(c)
-
-
-help me fix it
-"""
+if not np.allclose(c_batch_scores, py_batch_scores):
+  print("\nBatch score differences:")
+  print("Max difference:", np.max(np.abs(c_batch_scores - py_batch_scores)))
+  print("Mean difference:", np.mean(np.abs(c_batch_scores - py_batch_scores)))
