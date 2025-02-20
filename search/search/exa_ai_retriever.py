@@ -21,14 +21,21 @@ def _get_lib():
     ctypes.c_int
   ]
 
-  lib.get_scores.argtypes = [
+  lib.instantiate_lookup_table.argtypes = [
     np.ctypeslib.ndpointer(dtype=np.float32),
+    np.ctypeslib.ndpointer(dtype=np.float32),
+    np.ctypeslib.ndpointer(dtype=np.float32),
+    ctypes.c_int,
+  ]
+
+  lib.compile_scores.argtypes = [
     np.ctypeslib.ndpointer(dtype=np.uint8),
     np.ctypeslib.ndpointer(dtype=np.float32),
     np.ctypeslib.ndpointer(dtype=np.float32),
     ctypes.c_int,
-    ctypes.c_int
+    ctypes.c_int,
   ]
+
   return lib
 
 from .base import BaseSearch
@@ -67,15 +74,20 @@ class ExaAISearch(BaseSearch):
 
     # Compute scores
     assert query_emb.shape[1] == self.matryoshka_dim, f'need embedding dimension size == {self.matryoshka_dim}, but got "{query_emb.shape[1]}"'
+    lookup_table = np.zeros((len(query_ids) * self.matryoshka_dim//SUBVECTOR_SIZE, 256), dtype=np.float32)
+    lib.instantiate_lookup_table(lookup_table.ravel(), query_emb.astype(np.float32).ravel(), matrix_B.T.ravel(), len(query_ids))
+
     scores = np.zeros((len(query_emb), DB_SIZE), dtype=np.float32)
-    lib.get_scores(
-      query_emb.astype(np.float32).ravel(),
-      compressed.ravel(),
-      matrix_B.T.ravel(),
-      scores.ravel(),
-      len(query_emb),
-      DB_SIZE,
-    )
+    lib.compile_scores(compressed.ravel(), lookup_table, scores.ravel(), len(query_ids), len(corpus_ids))
+
+    # lib.get_scores(
+    #   query_emb.astype(np.float32).ravel(),
+    #   compressed.ravel(),
+    #   matrix_B.T.ravel(),
+    #   scores.ravel(),
+    #   len(query_emb),
+    #   DB_SIZE,
+    # )
 
     # Convert to BEIR format results
     results = {}

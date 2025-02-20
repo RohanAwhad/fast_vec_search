@@ -82,8 +82,7 @@ def get_lib():
     ctypes.c_int,
   ]
 
-  lib.get_scores.argtypes = [
-    np.ctypeslib.ndpointer(dtype=np.float32),
+  lib.compile_scores.argtypes = [
     np.ctypeslib.ndpointer(dtype=np.uint8),
     np.ctypeslib.ndpointer(dtype=np.float32),
     np.ctypeslib.ndpointer(dtype=np.float32),
@@ -176,14 +175,11 @@ if not np.allclose(lookup, subvector_scores, atol=1e-5):
   print(f"Std difference: {np.std(diffs)}")
 
 # test final scores
-query = np.random.rand(1, EMBED_SIZE).astype(np.float32)
-subvector_scores = generate_subvector_scores(query[:, :EMBED_SIZE])
 py_scores = compile_scores(subvector_scores, binary_db)
 
 # numpy all close
-query = query.astype(np.float32).ravel()
 scores_c = np.zeros(DB_SIZE, dtype=np.float32)
-lib.get_scores(query.ravel(), compressed.ravel(), matrix_B.T.ravel(), scores_c.ravel(), 1, DB_SIZE)
+lib.compile_scores(compressed.ravel(), lookup, scores_c.ravel(), 1, DB_SIZE)
 
 print("Scores match?", np.allclose(scores_c, py_scores))
 
@@ -201,29 +197,6 @@ if not np.allclose(scores_c, py_scores):
   print("\nTop 10 indices match?", np.array_equal(binary_top_10_c, binary_top_10))
   print("Common in top 100:", len(set(binary_top_100_c).intersection(set(binary_top_100))))
 
-def benchmark():
-  import time
-  num_runs = 1000
-  
-  start = time.time()
-  for _ in range(num_runs):
-    subvector_scores = generate_subvector_scores(query[:EMBED_SIZE])
-    py_scores = compile_scores(subvector_scores, binary_db)
-  py_time = (time.time() - start) / num_runs
-  
-  start = time.time()
-  for _ in range(num_runs):
-    lib.get_scores(query, compressed, matrix_B, scores_c, EMBED_SIZE, DB_SIZE)
-  c_time = (time.time() - start) / num_runs
-  
-  print(f"\nBenchmark results (average over {num_runs} runs):")
-  print(f"Python implementation: {py_time*1000:.3f} ms")
-  print(f"C implementation: {c_time*1000:.3f} ms")
-  print(f"Speedup: {py_time/c_time:.2f}x")
-
-benchmark()
-
-
 # these were all single query, now I want to test the final scores for a batch of 2 queries at a time
 # Test batch processing
 batch_size = 2
@@ -238,15 +211,12 @@ for q in queries:
 py_batch_scores = np.array(py_batch_scores)
 
 # C implementation
+c_lookup_table = np.zeros((batch_size*EMBED_SIZE//SUBVECTOR_SIZE, 256), dtype=np.float32)
+lib.instantiate_lookup_table(c_lookup_table.ravel(), queries.astype(np.float32).ravel(), matrix_B.T.ravel(), len(queries))
+
 c_batch_scores = np.zeros((batch_size, DB_SIZE), dtype=np.float32)
-lib.get_scores(
-  queries.ravel(),
-  compressed.ravel(),
-  matrix_B.T.ravel(),
-  c_batch_scores.ravel(),
-  batch_size,
-  DB_SIZE
-)
+lib.compile_scores(compressed.ravel(), c_lookup_table, c_batch_scores.ravel(), batch_size, DB_SIZE)
+
 
 print("Batch scores match?", np.allclose(c_batch_scores, py_batch_scores))
 

@@ -10,10 +10,6 @@
 #define BYTE_SIZE 8
 #define SUBVECTOR_SIZE 8
 
-void get_binary_matrix(float *binary_attack);
-void quantize(uint8_t *compressed, float *db, int DB_SIZE);
-void get_scores(float *query, uint8_t *compressed, float *matrix_B, float *scores, int n, int DB_SIZE);
-
 
 
 void get_binary_matrix(float *binary_array) {
@@ -73,9 +69,3 @@ void instantiate_lookup_table(float *lookup_table, float *query, float *matrix_B
   );
 }
 
-void get_scores(float *query, uint8_t *compressed, float *matrix_B, float *scores, int n, int DB_SIZE) {
-  // n is number of query embeddings
-  float lookup_table[n*EMBED_SIZE/SUBVECTOR_SIZE][256];
-  vDSP_mmul((float *)query, 1, (float *) matrix_B, 1, (float *)lookup_table, 1, n*EMBED_SIZE/SUBVECTOR_SIZE, 256, SUBVECTOR_SIZE);
-  compile_scores((uint8_t *)compressed, (float *)lookup_table, (float *)scores, n, DB_SIZE);
-}
