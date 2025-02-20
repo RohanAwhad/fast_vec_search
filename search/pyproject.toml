@@ -1,0 +1,15 @@
+[project]
+name = "search"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "beir>=2.0.0",
+    "chromadb>=0.6.3",
+    "datasets>=3.3.1",
+    "einops>=0.8.1",
+    "numpy>=2.2.3",
+    "sentence-transformers>=3.4.1",
+    "tqdm>=4.67.1",
+]

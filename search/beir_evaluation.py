@@ -1,15 +1,3 @@
-# /// script
-# dependencies = [
-#   "sentence-transformers",
-#   "numpy",
-#   "datasets",
-#   "tqdm",
-#   "einops",
-#   "beir",
-#   "chromadb",
-# ]
-# ///
-
 import argparse
 
 argparser = argparse.ArgumentParser()
