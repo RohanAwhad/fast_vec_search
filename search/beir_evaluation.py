@@ -1,7 +1,9 @@
 import argparse
 
+from torch import narrow_copy
+
 argparser = argparse.ArgumentParser()
-argparser.add_argument('--retrieval_type', type=str, choices=['exa_ai', 'dense', 'chromadb', 'qdrant'], default='qdrant', help='Type of retrieval to use')
+argparser.add_argument('--retrieval_type', type=str, choices=['exa_ai', 'py_exa_ai', 'dense', 'chromadb', 'qdrant'], default='py_exa_ai', help='Type of retrieval to use')
 argparser.add_argument(
   '--model_name',
   type=str,
@@ -31,6 +33,7 @@ from text_preprocessor.nomic_embed_preprocessor import NomicEmbedPreprocessor
 from search.chromadb_search import ChromaDBSearch
 from search.exa_ai_retriever import ExaAISearch
 from search.qdrant_search import QdrantSearch
+from search.py_exaai_search import PyExaAISearch
 
 #### Just some code to print debug information to stdout
 logging.basicConfig(format='%(asctime)s - %(message)s',
@@ -55,6 +58,7 @@ encoder = NomicEmbedEncoder(model_name=args.model_name, matryoshka_dim=EMBED_DIM
 
 if args.retrieval_type == 'dense': retriever = DRES(encoder, batch_size=8)
 elif args.retrieval_type == 'exa_ai': retriever = ExaAISearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
+elif args.retrieval_type == 'py_exa_ai': retriever = PyExaAISearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
 elif args.retrieval_type == 'chromadb': retriever = ChromaDBSearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
 elif args.retrieval_type == 'qdrant': retriever = QdrantSearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
 else: raise ValueError('Invalid retrieval type mentioned')

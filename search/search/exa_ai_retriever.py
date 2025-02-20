@@ -80,15 +80,6 @@ class ExaAISearch(BaseSearch):
     scores = np.zeros((len(query_emb), DB_SIZE), dtype=np.float32)
     lib.compile_scores(compressed.ravel(), lookup_table, scores.ravel(), len(query_ids), len(corpus_ids))
 
-    # lib.get_scores(
-    #   query_emb.astype(np.float32).ravel(),
-    #   compressed.ravel(),
-    #   matrix_B.T.ravel(),
-    #   scores.ravel(),
-    #   len(query_emb),
-    #   DB_SIZE,
-    # )
-
     # Convert to BEIR format results
     results = {}
     for q_idx, qid in enumerate(query_ids):
