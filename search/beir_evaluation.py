@@ -6,45 +6,15 @@
 #   "tqdm",
 #   "einops",
 #   "beir",
+#   "chromadb",
 # ]
 # ///
 
-# ===
-# Load up C lib
-# ===
-import ctypes
-import functools
-import numpy as np
+import argparse
 
-EMBED_SIZE = 256
-BYTE_SIZE = 8
-SUBVECTOR_SIZE = 8
-
-@functools.lru_cache()
-def get_lib():
-  lib = ctypes.CDLL('./libexa_search.so')
-
-  # Define argument types
-  lib.get_binary_matrix.argtypes = [
-    np.ctypeslib.ndpointer(dtype=np.float32),
-  ]
-
-  lib.quantize.argtypes = [
-    np.ctypeslib.ndpointer(dtype=np.uint8),
-    np.ctypeslib.ndpointer(dtype=np.float32),
-    ctypes.c_int
-  ]
-
-  lib.get_scores.argtypes = [
-    np.ctypeslib.ndpointer(dtype=np.float32),
-    np.ctypeslib.ndpointer(dtype=np.uint8),
-    np.ctypeslib.ndpointer(dtype=np.float32),
-    np.ctypeslib.ndpointer(dtype=np.float32),
-    ctypes.c_int,
-    ctypes.c_int
-  ]
-  return lib
-
+argparser = argparse.ArgumentParser()
+argparser.add_argument('--retrieval_type', type=str, choices=['exa_ai', 'dense', 'chromadb'], default='dense', help='Type of retrieval to use')
+args = argparser.parse_args()
 
 # ===
 # Evaluation on BEIR
@@ -53,16 +23,16 @@ import json
 import logging
 import os
 
-from typing import Dict
-
-import numpy as np
-
 from beir import util, LoggingHandler
 from beir.datasets.data_loader import GenericDataLoader
 from beir.retrieval.evaluation import EvaluateRetrieval
-from beir.retrieval.search import BaseSearch
+from beir.retrieval.search.dense import DenseRetrievalExactSearch as DRES
 
-from encoder_model.base import EncoderModel
+from encoder_model.nomic_embed_encoder import NomicEmbedEncoder
+from text_preprocessor.nomic_embed_preprocessor import NomicEmbedPreprocessor
+
+from search.chromadb_search import ChromaDBSearch
+from search.exa_ai_retriever import ExaAISearch
 
 #### Just some code to print debug information to stdout
 logging.basicConfig(format='%(asctime)s - %(message)s',
@@ -82,75 +52,35 @@ data_path = util.download_and_unzip(url, out_dir)
 corpus, queries, qrels = GenericDataLoader(data_folder=data_path).load(split="test")
 
 
-class RetrievalSystem(BaseSearch):
-  def __init__(self, model: EncoderModel, batch_size: int = 128, corpus_chunk_size: int = 50000, **kwargs):
-    self.model = model
-    self.batch_size = batch_size
-    self.corpus_chunk_size = corpus_chunk_size
+EMBED_DIM = 256
+model_name = 'tomaarsen/mpnet-base-nli-matryoshka'
+encoder = NomicEmbedEncoder(model_name=model_name, matryoshka_dim=EMBED_DIM, text_preprocessor=NomicEmbedPreprocessor(), trust_remote_code=True)
 
-  def search(self, corpus: Dict[str, Dict[str, str]], queries: Dict[str, str], top_k: int, score_function: str, **kwargs) -> Dict[str, Dict[str, float]]:
-    # setup vec search
-    lib = get_lib()
-    matrix_B = np.random.randn(256, BYTE_SIZE).astype(np.float32)
-    lib.get_binary_matrix(matrix_B.ravel())
+if args.retrieval_type == 'dense':
+  model = DRES(encoder, batch_size=8)
+  evaluator = EvaluateRetrieval(model, score_function="dot") # or "dot" for dot product "cos_sim" for cosine similarity
+  results = evaluator.retrieve(corpus, queries)
 
-    # Convert corpus to ordered list of texts
-    corpus_ids = list(corpus.keys())
-    corpus_texts = [corpus[cid]['text'] for cid in corpus_ids]
-    db = self.model.encode_corpus(corpus_texts, self.batch_size)
+elif args.retrieval_type == 'exa_ai':
+  retriever = ExaAISearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
+  evaluator = EvaluateRetrieval(retriever)
+  results = evaluator.retrieve(corpus, queries)
+elif args.retrieval_type == 'chromadb':
+  retriever = ChromaDBSearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
+  evaluator = EvaluateRetrieval(retriever)
+  results = evaluator.retrieve(corpus, queries)
+else:
+  raise ValueError('Invalid retrieval type mentioned')
 
-    # index corpus
-    DB_SIZE = db.shape[0]
-    assert db.shape[1] >= EMBED_SIZE, f'need embedding dimension size >= {EMBED_SIZE}, but got "{db.shape[1]}"'
-    compressed = np.zeros((DB_SIZE, EMBED_SIZE//8), dtype=np.uint8)
-    lib.quantize(compressed.ravel(), db[:, :EMBED_SIZE].ravel(), DB_SIZE)
-
-    # Encode queries and corpus in batches
-    query_ids = list(queries.keys())
-    query_emb = self.model.encode_queries([queries[qid] for qid in query_ids], self.batch_size)
-
-    # Compute scores
-    assert query_emb.shape[1] == EMBED_SIZE, f'need embedding dimension size == {EMBED_SIZE}, but got "{query_emb.shape[1]}"'
-    scores = np.zeros((len(query_emb), DB_SIZE), dtype=np.float32)
-    lib.get_scores(
-      query_emb.astype(np.float32).ravel(),
-      compressed.ravel(),
-      matrix_B.T.ravel(),
-      scores.ravel(),
-      len(query_emb),
-      DB_SIZE,
-    )
-
-    # Convert to BEIR format results
-    results = {}
-    for q_idx, qid in enumerate(query_ids):
-        doc_scores = scores[q_idx]
-        top_indices = np.argpartition(doc_scores, -top_k)[-top_k:]
-        results[qid] = {
-            corpus_ids[d_idx]: float(doc_scores[d_idx])
-            for d_idx in top_indices
-        }
-    return results
-
-
-from text_preprocessor.nomic_embed_preprocessor import NomicEmbedPreprocessor
-from encoder_model.nomic_embed_encoder import NomicEmbedEncoder
-
-model_name = 'nomic-ai/nomic-embed-text-v1.5'
-encoder = NomicEmbedEncoder(model_name=model_name, embed_dim=EMBED_SIZE, text_preprocessor=NomicEmbedPreprocessor(), trust_remote_code=True)
-retriever = RetrievalSystem(encoder, batch_size=8)
-evaluator = EvaluateRetrieval(retriever)
-
-# On BEIR dataset:
-results = evaluator.retrieve(corpus, queries)
-
-k_values = [1,3,5,10,100,1000]
+k_values = [1,3,5,10,50,100,1000]
 ndcg, _map, recall, precision = evaluator.evaluate(qrels, results, k_values)
 
-results_dir = os.path.join("./results", model_name.replace('/', '_'))
+# save
+results_dir = os.path.join("./results", model_name.replace('/', '_'), args.retrieval_type)
 os.makedirs(results_dir, exist_ok=True)
+fn = os.path.join(results_dir, f"{dataset}.json")
 
-with open(os.path.join(results_dir, f"{dataset}.json"), 'w') as f:
+with open(fn, 'w') as f:
   json.dump(dict(ndcg=ndcg, recall=recall, precision=precision), f)
 
 # needs beir from main branch, but there is a bug in the code. "faiss is undefined"
