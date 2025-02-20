@@ -1,7 +1,16 @@
 import argparse
 
 argparser = argparse.ArgumentParser()
-argparser.add_argument('--retrieval_type', type=str, choices=['exa_ai', 'dense', 'chromadb'], default='dense', help='Type of retrieval to use')
+argparser.add_argument('--retrieval_type', type=str, choices=['exa_ai', 'dense', 'chromadb', 'qdrant'], default='qdrant', help='Type of retrieval to use')
+argparser.add_argument(
+  '--model_name',
+  type=str,
+  choices=[
+    'tomaarsen/mpnet-base-nli-matryoshka',
+    'nomic-ai/nomic-embed-text-v1.5',
+  ],
+  default='tomaarsen/mpnet-base-nli-matryoshka',
+  help='model to use')
 args = argparser.parse_args()
 
 # ===
@@ -21,6 +30,7 @@ from text_preprocessor.nomic_embed_preprocessor import NomicEmbedPreprocessor
 
 from search.chromadb_search import ChromaDBSearch
 from search.exa_ai_retriever import ExaAISearch
+from search.qdrant_search import QdrantSearch
 
 #### Just some code to print debug information to stdout
 logging.basicConfig(format='%(asctime)s - %(message)s',
@@ -41,30 +51,23 @@ corpus, queries, qrels = GenericDataLoader(data_folder=data_path).load(split="te
 
 
 EMBED_DIM = 256
-model_name = 'tomaarsen/mpnet-base-nli-matryoshka'
-encoder = NomicEmbedEncoder(model_name=model_name, matryoshka_dim=EMBED_DIM, text_preprocessor=NomicEmbedPreprocessor(), trust_remote_code=True)
+encoder = NomicEmbedEncoder(model_name=args.model_name, matryoshka_dim=EMBED_DIM, text_preprocessor=NomicEmbedPreprocessor(), trust_remote_code=True)
 
-if args.retrieval_type == 'dense':
-  model = DRES(encoder, batch_size=8)
-  evaluator = EvaluateRetrieval(model, score_function="dot") # or "dot" for dot product "cos_sim" for cosine similarity
-  results = evaluator.retrieve(corpus, queries)
+if args.retrieval_type == 'dense': retriever = DRES(encoder, batch_size=8)
+elif args.retrieval_type == 'exa_ai': retriever = ExaAISearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
+elif args.retrieval_type == 'chromadb': retriever = ChromaDBSearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
+elif args.retrieval_type == 'qdrant': retriever = QdrantSearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
+else: raise ValueError('Invalid retrieval type mentioned')
 
-elif args.retrieval_type == 'exa_ai':
-  retriever = ExaAISearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
-  evaluator = EvaluateRetrieval(retriever)
-  results = evaluator.retrieve(corpus, queries)
-elif args.retrieval_type == 'chromadb':
-  retriever = ChromaDBSearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
-  evaluator = EvaluateRetrieval(retriever)
-  results = evaluator.retrieve(corpus, queries)
-else:
-  raise ValueError('Invalid retrieval type mentioned')
+
+evaluator = EvaluateRetrieval(retriever, score_function="dot") # or "dot" for dot product "cos_sim" for cosine similarity
+results = evaluator.retrieve(corpus, queries)
 
 k_values = [1,3,5,10,50,100,1000]
 ndcg, _map, recall, precision = evaluator.evaluate(qrels, results, k_values)
 
 # save
-results_dir = os.path.join("./results", model_name.replace('/', '_'), args.retrieval_type)
+results_dir = os.path.join("./results", args.model_name.replace('/', '_'), args.retrieval_type)
 os.makedirs(results_dir, exist_ok=True)
 fn = os.path.join(results_dir, f"{dataset}.json")
 

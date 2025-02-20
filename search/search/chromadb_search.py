@@ -28,7 +28,7 @@ class ChromaDBSearch(BaseSearch):
 
         # Process corpus
         corpus_ids = list(corpus.keys())
-        corpus_texts = [doc['text'] for doc in corpus.values()]
+        corpus_texts = [corpus[cid]['text'] for cid in corpus_ids]
 
         # Encode and truncate corpus embeddings
         corpus_embeddings = self.model.encode_corpus(
