@@ -11,6 +11,7 @@ class BaseSearch(ABC):
              corpus: Dict[str, Dict[str, str]], 
              queries: Dict[str, str], 
              top_k: int, 
+             score_function: str,
              **kwargs) -> Dict[str, Dict[str, float]]:
     """Performs semantic search on corpus using queries.
 
