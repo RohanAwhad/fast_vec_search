@@ -1,7 +1,5 @@
 import argparse
 
-from torch import narrow_copy
-
 argparser = argparse.ArgumentParser()
 argparser.add_argument('--retrieval_type', type=str, choices=['exa_ai', 'py_exa_ai', 'dense', 'chromadb', 'qdrant'], default='py_exa_ai', help='Type of retrieval to use')
 argparser.add_argument(
@@ -13,6 +11,28 @@ argparser.add_argument(
   ],
   default='tomaarsen/mpnet-base-nli-matryoshka',
   help='model to use')
+argparser.add_argument(
+  '--dataset',
+  type=str,
+  choices=[
+    'scifact',
+    'msmarco',
+    'trec-covid',
+    'nfcorpus',
+    'nq',
+    'hotpotqa',
+    'fiqa',
+    'arguana',
+    'cqadupstack',
+    'quora',
+    'dbpedia-entity',
+    'scidocs',
+    'fever',
+    'climate-fever',
+  ],
+  default='scifact',
+  help='dataset to use')
+argparser.add_argument('--batch_size', type=int, default=8, help='batch size for encoding')
 args = argparser.parse_args()
 
 # ===
@@ -44,7 +64,7 @@ logging.basicConfig(format='%(asctime)s - %(message)s',
 
 
 #### Download scifact.zip dataset and unzip the dataset
-dataset = "scifact"
+dataset = "webis-touche2020"
 url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{dataset}.zip"
 out_dir = os.path.join("./datasets")
 data_path = util.download_and_unzip(url, out_dir)
@@ -55,14 +75,20 @@ corpus, queries, qrels = GenericDataLoader(data_folder=data_path).load(split="te
 
 EMBED_DIM = 256
 encoder = NomicEmbedEncoder(model_name=args.model_name, matryoshka_dim=EMBED_DIM, text_preprocessor=NomicEmbedPreprocessor(), trust_remote_code=True)
+def get_retriever(retrieval_type, encoder, batch_size):
+  retriever_factory = {
+    'dense': lambda encoder, batch_size: DRES(encoder, batch_size=batch_size),
+    'exa_ai': lambda encoder, batch_size: ExaAISearch(encoder, batch_size=batch_size, matryoshka_dim=EMBED_DIM),
+    'py_exa_ai': lambda encoder, batch_size: PyExaAISearch(encoder, batch_size=batch_size, matryoshka_dim=EMBED_DIM),
+    'chromadb': lambda encoder, batch_size: ChromaDBSearch(encoder, batch_size=batch_size, matryoshka_dim=EMBED_DIM),
+    'qdrant': lambda encoder, batch_size: QdrantSearch(encoder, batch_size=batch_size, matryoshka_dim=EMBED_DIM)
+  }
 
-if args.retrieval_type == 'dense': retriever = DRES(encoder, batch_size=8)
-elif args.retrieval_type == 'exa_ai': retriever = ExaAISearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
-elif args.retrieval_type == 'py_exa_ai': retriever = PyExaAISearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
-elif args.retrieval_type == 'chromadb': retriever = ChromaDBSearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
-elif args.retrieval_type == 'qdrant': retriever = QdrantSearch(encoder, batch_size=8, matryoshka_dim=EMBED_DIM)
-else: raise ValueError('Invalid retrieval type mentioned')
+  if retrieval_type not in retriever_factory:
+    raise ValueError(f'Invalid retrieval type: {retrieval_type}')
+  return retriever_factory[retrieval_type](encoder, batch_size)
 
+retriever = get_retriever(args.retrieval_type, encoder, args.batch_size)
 
 evaluator = EvaluateRetrieval(retriever, score_function="dot") # or "dot" for dot product "cos_sim" for cosine similarity
 results = evaluator.retrieve(corpus, queries)
@@ -76,7 +102,7 @@ os.makedirs(results_dir, exist_ok=True)
 fn = os.path.join(results_dir, f"{dataset}.json")
 
 with open(fn, 'w') as f:
-  json.dump(dict(ndcg=ndcg, recall=recall, precision=precision), f)
+  json.dump(dict(ndcg=ndcg, recall=recall, precision=precision), f, indent=2)
 
 # needs beir from main branch, but there is a bug in the code. "faiss is undefined"
 # util.save_runfile(os.path.join(results_dir, f"{dataset}.run.trec"), results)
