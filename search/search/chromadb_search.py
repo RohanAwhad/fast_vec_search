@@ -3,6 +3,7 @@ from typing import Dict
 from .base import BaseSearch
 from encoder_model.base import EncoderModel
 
+CHROMADB_BATCH_SIZE = 41660
 class ChromaDBSearch(BaseSearch):
     def __init__(self,
                  model: EncoderModel,
@@ -30,11 +31,12 @@ class ChromaDBSearch(BaseSearch):
 
         # Add to Chroma
         corpus_texts = [corpus[cid]['text'] for cid in corpus_ids]
-        collection.add(
-            ids=corpus_ids,
-            documents=corpus_texts,
-            embeddings=corpus_embeddings.tolist()
-        )
+        for i in range(0, len(corpus_ids), CHROMADB_BATCH_SIZE):
+            collection.add(
+                ids=corpus_ids[i: i+CHROMADB_BATCH_SIZE],
+                documents=corpus_texts[i: i+CHROMADB_BATCH_SIZE],
+                embeddings=corpus_embeddings[i:i+CHROMADB_BATCH_SIZE].tolist()
+            )
 
         # Perform search
         results = collection.query(
