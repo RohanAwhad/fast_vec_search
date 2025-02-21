@@ -3,7 +3,7 @@ from typing import Dict
 from .base import BaseSearch
 from encoder_model.base import EncoderModel
 
-CHROMADB_BATCH_SIZE = 41660
+CHROMADB_BATCH_SIZE = 4096
 class ChromaDBSearch(BaseSearch):
     def __init__(self,
                  model: EncoderModel,
