@@ -14,11 +14,13 @@ class ChromaDBSearch(BaseSearch):
         self._client = chromadb.Client()  # In-memory client
 
     def search(self,
-              corpus: Dict[str, Dict[str, str]],
-              queries: Dict[str, str],
-              top_k: int,
-              score_function: str,
-              **kwargs) -> Dict[str, Dict[str, float]]:
+            corpus,
+            corpus_ids,
+            corpus_embeddings,
+            query_ids,
+            query_embeddings,
+            top_k,
+            **kwargs) -> Dict[str, Dict[str, float]]:
 
         # Create fresh collection for this search session
         collection = self._client.create_collection(
@@ -26,33 +28,12 @@ class ChromaDBSearch(BaseSearch):
             metadata={"hnsw:space": "ip"}  # Inner product similarity
         )
 
-        # Process corpus
-        corpus_ids = list(corpus.keys())
-        corpus_texts = [corpus[cid]['text'] for cid in corpus_ids]
-
-        # Encode and truncate corpus embeddings
-        corpus_embeddings = self.model.encode_corpus(
-            corpus_texts,
-            self.batch_size,
-            convert_to_tensor=True
-        )
-
         # Add to Chroma
+        corpus_texts = [corpus[cid]['text'] for cid in corpus_ids]
         collection.add(
             ids=corpus_ids,
             documents=corpus_texts,
             embeddings=corpus_embeddings.tolist()
-        )
-
-        # Process queries
-        query_ids = list(queries.keys())
-        query_texts = [queries[qid] for qid in query_ids]
-
-        # Encode and truncate query embeddings
-        query_embeddings = self.model.encode_queries(
-            query_texts,
-            self.batch_size,
-            convert_to_tensor=True
         )
 
         # Perform search

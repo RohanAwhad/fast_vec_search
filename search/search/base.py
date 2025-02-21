@@ -8,10 +8,12 @@ class BaseSearch(ABC):
 
   @abstractmethod
   def search(self, 
-             corpus: Dict[str, Dict[str, str]], 
-             queries: Dict[str, str], 
+             corpus: dict[str, dict[str, str]],
+             corpus_ids: list[str],
+             corpus_embeddings: "np.ndarray",
+             query_ids: list[str],
+             query_embeddings: "np.ndarray",
              top_k: int, 
-             score_function: str,
              **kwargs) -> Dict[str, Dict[str, float]]:
     """Performs semantic search on corpus using queries.
 

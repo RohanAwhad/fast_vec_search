@@ -15,10 +15,12 @@ class QdrantSearch(BaseSearch):
     self._client = QdrantClient(host="localhost", port=6333)
 
   def search(self,
-            corpus: Dict[str, Dict[str, str]],
-            queries: Dict[str, str],
-            top_k: int,
-            score_function: str,
+            corpus,
+            corpus_ids,
+            corpus_embeddings,
+            query_ids,
+            query_embeddings,
+            top_k,
             **kwargs) -> Dict[str, Dict[str, float]]:
 
     # Create unique collection name for this session
@@ -33,19 +35,8 @@ class QdrantSearch(BaseSearch):
       )
     )
 
-    # Process corpus
-    corpus_ids = list(corpus.keys())
-    corpus_texts = [corpus[cid]['text'] for cid in corpus_ids]
-    cid2did = {x: i for i, x in enumerate(corpus_ids)}
-
-    # Encode and truncate corpus embeddings
-    corpus_embeddings = self.model.encode_corpus(
-      corpus_texts,
-      self.batch_size,
-      convert_to_tensor=True
-    )
-
     # Upsert documents
+    cid2did = {x: i for i, x in enumerate(corpus_ids)}
     for i in range(0, len(corpus_ids), self.batch_size):
       self._client.upsert(
         collection_name=collection_name,
@@ -58,18 +49,6 @@ class QdrantSearch(BaseSearch):
           for doc_id, embedding in zip(corpus_ids[i:i+self.batch_size], corpus_embeddings[i:i+self.batch_size])
         ]
       )
-
-    # Process queries
-    query_ids = list(queries.keys())
-    query_texts = [queries[qid] for qid in query_ids]
-
-    # Encode and truncate query embeddings
-    query_embeddings = self.model.encode_queries(
-      query_texts,
-      self.batch_size,
-      convert_to_tensor=True
-    )
-
 
     # Process queries
     results = {}

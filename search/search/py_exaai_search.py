@@ -1,4 +1,5 @@
 import faiss
+faiss.omp_set_num_threads(1)
 import numpy as np
 from typing import Dict
 
@@ -65,33 +66,28 @@ class PyExaAISearch(BaseSearch):
     return binary_centroids, cluster_members
 
   def search(self,
-            corpus: Dict[str, Dict[str, str]],
-            queries: Dict[str, str],
-            top_k: int,
-            score_function: str,
-            **kwargs) -> Dict[str, Dict[str, float]]:
+             corpus,
+             corpus_ids,
+             corpus_embeddings,
+             query_ids,
+             query_embeddings,
+             top_k,
+             **kwargs) -> Dict[str, Dict[str, float]]:
 
     # Process and encode corpus
-    corpus_ids = list(corpus.keys())
-    corpus_texts = [corpus[cid]['text'] for cid in corpus_ids]
-    corpus_embeddings = self.model.encode_corpus(corpus_texts, self.batch_size, convert_to_tensor=True)
     self.binary_db = self.compress(corpus_embeddings)
 
     # Create clusters
-    self.n_centroids = min(self.n_centroids, len(corpus_ids) // self._min_cluster_size)
+    self.n_centroids = max(1, min(self.n_centroids, len(corpus_ids) // self._min_cluster_size))
     self.binary_centroids, self.cluster_members = self.create_clusters(corpus_embeddings)
 
     # Process queries
-    query_ids = list(queries.keys())
-    query_texts = [queries[qid] for qid in query_ids]
-    query_embeddings = self.model.encode_queries(query_texts, self.batch_size, convert_to_tensor=True)
-
     results = {}
     for qid, query_embedding in zip(query_ids, query_embeddings):
       subvector_scores = self.instantiate_lookup_table(query_embedding)
       centroid_scores = self.compile_scores(subvector_scores, self.binary_centroids)
       top_cluster_idx = centroid_scores.argmax()
-      candidate_indices = self.cluster_members[top_cluster_idx]
+      candidate_indices = np.array(self.cluster_members[top_cluster_idx])
       candidate_binary_db = [self.binary_db[i] for i in candidate_indices]
       candidate_scores = self.compile_scores(subvector_scores, candidate_binary_db)
 

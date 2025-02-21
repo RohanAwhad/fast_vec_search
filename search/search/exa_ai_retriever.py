@@ -51,16 +51,15 @@ class ExaAISearch(BaseSearch):
     self.corpus_chunk_size = corpus_chunk_size
     self.matryoshka_dim = matryoshka_dim
 
-  def search(self, corpus: dict[str, dict[str, str]], queries: dict[str, str], top_k: int, score_function: str, **kwargs) -> dict[str, dict[str, float]]:
+  def search(self, corpus, corpus_ids, corpus_embeddings, query_ids, query_embeddings, top_k, **kwargs) -> dict[str, dict[str, float]]:
     # setup vec search
     lib = _get_lib()
     matrix_B = np.random.randn(256, BYTE_SIZE).astype(np.float32)
     lib.get_binary_matrix(matrix_B.ravel())
 
     # Convert corpus to ordered list of texts
-    corpus_ids = list(corpus.keys())
     corpus_texts = [corpus[cid]['text'] for cid in corpus_ids]
-    db = self.model.encode_corpus(corpus_texts, self.batch_size, convert_to_tensor=True)
+    db = corpus_embeddings
 
     # index corpus
     DB_SIZE = db.shape[0]
@@ -69,8 +68,7 @@ class ExaAISearch(BaseSearch):
     lib.quantize(compressed.ravel(), db[:, :self.matryoshka_dim].ravel(), DB_SIZE)
 
     # Encode queries and corpus in batches
-    query_ids = list(queries.keys())
-    query_emb = self.model.encode_queries([queries[qid] for qid in query_ids], self.batch_size, convert_to_tensor=True)
+    query_emb = query_embeddings
 
     # Compute scores
     assert query_emb.shape[1] == self.matryoshka_dim, f'need embedding dimension size == {self.matryoshka_dim}, but got "{query_emb.shape[1]}"'
