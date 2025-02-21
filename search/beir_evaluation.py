@@ -23,6 +23,7 @@ argparser.add_argument(
     'hotpotqa',
     'fiqa',
     'arguana',
+    'webis-touche2020',
     'cqadupstack',
     'quora',
     'dbpedia-entity',
@@ -32,6 +33,7 @@ argparser.add_argument(
   ],
   default='scifact',
   help='dataset to use')
+argparser.add_argument('--device', type=str, choices=['mps', 'cpu', 'cuda'], default=None, help='batch size for encoding')
 argparser.add_argument('--batch_size', type=int, default=8, help='batch size for encoding')
 args = argparser.parse_args()
 
@@ -64,8 +66,7 @@ logging.basicConfig(format='%(asctime)s - %(message)s',
 
 
 #### Download scifact.zip dataset and unzip the dataset
-dataset = "webis-touche2020"
-url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{dataset}.zip"
+url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{args.dataset}.zip"
 out_dir = os.path.join("./datasets")
 data_path = util.download_and_unzip(url, out_dir)
 
@@ -74,7 +75,7 @@ corpus, queries, qrels = GenericDataLoader(data_folder=data_path).load(split="te
 
 
 EMBED_DIM = 256
-encoder = NomicEmbedEncoder(model_name=args.model_name, matryoshka_dim=EMBED_DIM, text_preprocessor=NomicEmbedPreprocessor(), trust_remote_code=True)
+encoder = NomicEmbedEncoder(model_name=args.model_name, matryoshka_dim=EMBED_DIM, text_preprocessor=NomicEmbedPreprocessor(), trust_remote_code=True, device=args.device)
 def get_retriever(retrieval_type, encoder, batch_size):
   retriever_factory = {
     'dense': lambda encoder, batch_size: DRES(encoder, batch_size=batch_size),
@@ -99,11 +100,11 @@ ndcg, _map, recall, precision = evaluator.evaluate(qrels, results, k_values)
 # save
 results_dir = os.path.join("./results", args.model_name.replace('/', '_'), args.retrieval_type)
 os.makedirs(results_dir, exist_ok=True)
-fn = os.path.join(results_dir, f"{dataset}.json")
+fn = os.path.join(results_dir, f"{args.dataset}.json")
 
 with open(fn, 'w') as f:
   json.dump(dict(ndcg=ndcg, recall=recall, precision=precision), f, indent=2)
 
 # needs beir from main branch, but there is a bug in the code. "faiss is undefined"
-# util.save_runfile(os.path.join(results_dir, f"{dataset}.run.trec"), results)
-# util.save_results(os.path.join(results_dir, f"{dataset}.json"), ndcg, _map, recall, precision, mrr)
+# util.save_runfile(os.path.join(results_dir, f"{args.dataset}.run.trec"), results)
+# util.save_results(os.path.join(results_dir, f"{args.dataset}.json"), ndcg, _map, recall, precision, mrr)
