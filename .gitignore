@@ -2,3 +2,9 @@ search/datasets
 search/results
 search/embeddings
 __pycache__
+.DS_Store
+.venv
+*.out
+*.o
+*.so
+search/.flashrank_cache

@@ -56,14 +56,26 @@ class ExaAIIndex(BaseIndex):
   def __init__(self, ids, documents, binary_db, binary_centroids, cluster_members):
     self.ids = ids
     self.documents = documents
-    self.binary_db = binary_db
+    # self.binary_db = binary_db
     self.binary_centroids = binary_centroids
-    self.cluster_members = cluster_members
     self.subvector_size = SUBVECTOR_SIZE
     self.matrix_B = np.empty((256, BYTE_SIZE), dtype=np.float32)
 
     self.lib = _get_lib()
     self.lib.get_binary_matrix(self.matrix_B.ravel())
+
+
+    candidate_binary_dbs = []
+    for i in range(len(cluster_members)):
+      cluster_members[i] = np.array(cluster_members[i])
+      candidate_binary_db = np.vstack([binary_db[j] for j in cluster_members[i]])
+      candidate_binary_dbs.append(candidate_binary_db)
+
+    self.cluster_members = cluster_members
+    self.candidate_binary_dbs = candidate_binary_dbs
+
+    self.max_candidate_len = self.get_max_candidate_binary_db_len()
+
 
   def query(self, query_embeddings: list[list[float]], n_results: int, filters = None) -> list[RankedResults]:
 
@@ -72,27 +84,50 @@ class ExaAIIndex(BaseIndex):
     query_embeddings = np.array(query_embeddings, dtype=np.float32)
     embd_dim = query_embeddings.shape[1]
 
+    subvector_scores = np.empty((BATCH_SIZE, embd_dim//self.subvector_size, embd_dim), dtype=np.float32)
+    centroid_scores = np.empty((BATCH_SIZE, len(self.binary_centroids)), dtype=np.float32)
+    candidate_scores = np.empty((1, self.max_candidate_len), dtype=np.float32)
+
     for i in range(0, len(query_embeddings), BATCH_SIZE):
+      # print('iteration ', i)
       # Encode queries and corpus in batches
       query_emb = query_embeddings[i:i+BATCH_SIZE]
 
       # Compute scores
-      subvector_scores = np.zeros((len(query_emb), embd_dim//self.subvector_size, embd_dim), dtype=np.float32)
-      self.lib.instantiate_lookup_table(subvector_scores.ravel(), query_emb.astype(np.float32).ravel(), self.matrix_B.T.ravel(), len(query_emb))
+      # subvector_scores = np.zeros((len(query_emb), embd_dim//self.subvector_size, embd_dim), dtype=np.float32)
+      subvector_scores.fill(0)
+      self.lib.instantiate_lookup_table(subvector_scores[:len(query_emb)].ravel(), query_emb.astype(np.float32).ravel(), self.matrix_B.T.ravel(), len(query_emb))
+      # print('\nsubvector scores')
+      # print(subvector_scores)
 
-      centroid_scores = np.zeros((len(query_emb), len(self.binary_centroids)), dtype=np.float32)
-      self.lib.compile_scores(self.binary_centroids.ravel(), subvector_scores, centroid_scores.ravel(), len(query_emb), len(self.binary_centroids))
+      # centroid_scores = np.zeros((len(query_emb), len(self.binary_centroids)), dtype=np.float32)
+      centroid_scores.fill(0)
+      self.lib.compile_scores(self.binary_centroids.ravel(), subvector_scores[:len(query_emb)], centroid_scores[:len(query_emb)].ravel(), len(query_emb), len(self.binary_centroids))
+      # print('\n centroid scores')
+      # print(centroid_scores)
 
 
-      for i, cs in enumerate(centroid_scores):
+      for i, cs in enumerate(centroid_scores[:len(query_emb)]):
         top_cluster_idx = cs.argmax()
         candidate_indices = np.array(self.cluster_members[top_cluster_idx])
-        candidate_binary_db = np.array([self.binary_db[i] for i in candidate_indices], dtype=np.uint8)
+        # candidate_binary_db = np.vstack([self.binary_db[i] for i in candidate_indices])
+        candidate_binary_db = self.candidate_binary_dbs[top_cluster_idx]
+        # print('\n candidate binary db')
+        # print(candidate_binary_db)
 
-        candidate_scores = np.zeros((1, len(candidate_binary_db)), dtype=np.float32)
-        self.lib.compile_scores(candidate_binary_db.ravel(), subvector_scores[i].ravel(), candidate_scores.ravel(), 1, len(candidate_binary_db))
-        local_top_k = candidate_scores[0].argsort()[::-1][:n_results]
+        # candidate_scores = np.zeros((1, len(candidate_binary_db)), dtype=np.float32)
+        candidate_scores.fill(0)
+        self.lib.compile_scores(candidate_binary_db.ravel(), subvector_scores[i].ravel(), candidate_scores[:, :len(candidate_binary_db)].ravel(), 1, len(candidate_binary_db))
+        # print('\n candidate scores')
+        # print(candidate_scores)
+
+        local_top_k = candidate_scores[0, :len(candidate_binary_db)].argsort()[::-1][:n_results]
+        # print('\nlocal top k')
+        # print(local_top_k)
+
         global_top_k = candidate_indices[local_top_k]
+        # print('\nglobal top k')
+        # print(global_top_k)
 
         results = RankedResults(results=[
           Result(document=Document(doc_id=self.ids[idx], text=self.documents[idx]), score=candidate_scores[0][score_idx])
@@ -102,6 +137,21 @@ class ExaAIIndex(BaseIndex):
 
 
     return ret
+
+  def get_max_candidate_binary_db_len(self):
+    max_len = 0
+    for x in self.cluster_members:
+      max_len = max(len(x), max_len)
+    print('Max len:', max_len)
+    return max_len
+
+    cluster_labels = np.unique(self.cluster_members)
+    max_len = 0
+    for x in cluster_labels:
+      len_ = np.sum(self.cluster_members == x)
+      max_len = max(max_len, len_)
+
+    return max_len
 
 
 class ExaAIDB(BaseDB):
