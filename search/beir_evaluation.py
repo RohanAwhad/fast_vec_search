@@ -2,9 +2,13 @@ import argparse
 import pickle
 
 argparser = argparse.ArgumentParser()
-argparser.add_argument('--retrieval_type', type=str, choices=['exa_ai', 'py_exa_ai', 'dense', 'chromadb', 'qdrant'], default='py_exa_ai', help='Type of retrieval to use')
-argparser.add_argument(
-  '--model_name',
+argparser.add_argument('--retrieval_type',
+  type=str,
+  choices=['exa_ai', 'py_exa_ai', 'dense', 'chromadb', 'qdrant'],
+  default='py_exa_ai',
+  help='Type of retrieval to use')
+
+argparser.add_argument('--model_name',
   type=str,
   choices=[
     'tomaarsen/mpnet-base-nli-matryoshka',
@@ -12,8 +16,8 @@ argparser.add_argument(
   ],
   default='tomaarsen/mpnet-base-nli-matryoshka',
   help='model to use')
-argparser.add_argument(
-  '--dataset',
+
+argparser.add_argument('--dataset',
   type=str,
   choices=[
     'scifact',
@@ -130,9 +134,9 @@ def get_retriever(retrieval_type, encoder, batch_size) -> BaseSearch:
     raise ValueError(f'Invalid retrieval type: {retrieval_type}')
   return retriever_factory[retrieval_type](encoder, batch_size)
 
-k_values = [1,3,5,10,50,100,1000]
+k_values = [1,3,5,10,50,100]
 retriever = get_retriever(args.retrieval_type, encoder, args.batch_size)
-results = retriever.search(corpus, corpus_ids, corpus_embeddings, query_ids, query_embeddings, top_k=max(k_values))
+results = retriever.search(corpus, corpus_ids, corpus_embeddings, queries, query_ids, query_embeddings, top_k=max(k_values))
 ndcg, _map, recall, precision = EvaluateRetrieval.evaluate(qrels, results, k_values)
 
 # save
