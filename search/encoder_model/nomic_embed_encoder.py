@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from sentence_transformers import SentenceTransformer
 
+from . import utils
 from .base import EncoderModel
 from text_preprocessor.base import TextPreprocessor
 
@@ -32,12 +33,5 @@ class NomicEmbedEncoder(EncoderModel):
         batch_size=batch_size,
         **kwargs
     )
-    embeddings = self._apply_matryoshka_transformation(embeddings)
+    if self.matryoshka_dim is not None: embeddings = utils.apply_matryoshka_transformation(embeddings, self.matryoshka_dim)
     return embeddings
-
-  def _apply_matryoshka_transformation(self, embeddings: torch.Tensor) -> np.ndarray:
-    if self.matryoshka_dim is not None:
-      embeddings = F.layer_norm(embeddings, normalized_shape=(embeddings.shape[1],))
-      embeddings = embeddings[:, :self.matryoshka_dim]
-      embeddings = F.normalize(embeddings, p=2, dim=1)
-    return embeddings.cpu().numpy()

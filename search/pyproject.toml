@@ -19,4 +19,5 @@ dependencies = [
 [dependency-groups]
 dev = [
     "debugpy>=1.8.12",
+    "ipython>=8.34.0",
 ]

@@ -212,11 +212,17 @@ class PyExaAISearch(BaseSearch):
              top_k,
              **kwargs) -> Dict[str, Dict[str, float]]:
 
+    import time
     documents = [corpus[idx]['text'] for idx in corpus_ids]
     exaai_collection = ExaAIDB(embedding_size=256, n_centroids=10, min_cluster_size=100_000).create_collection('test')
+    start = time.monotonic()
     exaai_collection.add(ids=corpus_ids, documents=documents, embeddings=corpus_embeddings)
     exaai_index: ExaAIIndex = exaai_collection.create_index()
+    end1 = time.monotonic()
     results = exaai_index.query(query_embeddings=query_embeddings, n_results=top_k)
+    end2 = time.monotonic()
+    print(f"Creating Index took: {end1-start:0.3f} secs")
+    print(f"Querying took      : {end2-end1:0.3f} secs")
 
     ret = {}
     for qid, res in zip(query_ids, results):

@@ -136,7 +136,10 @@ def get_retriever(retrieval_type, encoder, batch_size) -> BaseSearch:
 
 k_values = [1,3,5,10,50,100]
 retriever = get_retriever(args.retrieval_type, encoder, args.batch_size)
+import time
+start = time.monotonic()
 results = retriever.search(corpus, corpus_ids, corpus_embeddings, queries, query_ids, query_embeddings, top_k=max(k_values))
+end = time.monotonic()
 ndcg, _map, recall, precision = EvaluateRetrieval.evaluate(qrels, results, k_values)
 
 # save
@@ -146,6 +149,8 @@ fn = os.path.join(results_dir, f"{args.dataset}.json")
 
 with open(fn, 'w') as f:
   json.dump(dict(ndcg=ndcg, recall=recall, precision=precision), f, indent=2)
+
+print(f"Total time taken including ingestion, and search: {end-start:0.3f} secs")
 
 # needs beir from main branch, but there is a bug in the code. "faiss is undefined"
 # util.save_runfile(os.path.join(results_dir, f"{args.dataset}.run.trec"), results)

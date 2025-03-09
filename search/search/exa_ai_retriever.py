@@ -51,7 +51,7 @@ class ExaAISearch(BaseSearch):
     self.corpus_chunk_size = corpus_chunk_size
     self.matryoshka_dim = matryoshka_dim
 
-  def search(self, corpus, corpus_ids, corpus_embeddings, query_ids, query_embeddings, top_k, **kwargs) -> dict[str, dict[str, float]]:
+  def search(self, corpus, corpus_ids, corpus_embeddings, queries, query_ids, query_embeddings, top_k, **kwargs) -> dict[str, dict[str, float]]:
     # setup vec search
     lib = _get_lib()
     matrix_B = np.random.randn(256, BYTE_SIZE).astype(np.float32)
